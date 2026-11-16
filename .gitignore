@@ -1,220 +1,289 @@
-# Byte-compiled / optimized / DLL files
-__pycache__/
-*.py[codz]
-*$py.class
+import time
 
-# C extensions
-*.so
+import streamlit as st
 
-# Distribution / packaging
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-share/python-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-MANIFEST
+# Arkadaşın llm.py'yi bitirene kadar True kalsın (sahte fake_llm.py kullanılır).
+# Gerçek llm.py hazır olunca sadece bunu False yap.
+USE_FAKE_LLM = True
 
-# PyInstaller
-#   Usually these files are written by a python script from a template
-#   before PyInstaller builds the exe, so as to inject date/other infos into it.
-*.manifest
-*.spec
+if USE_FAKE_LLM:
+    import fake_llm as llm
+else:
+    import llm
 
-# Installer logs
-pip-log.txt
-pip-delete-this-directory.txt
+TOTAL_QUESTIONS = 5
 
-# Unit test / coverage reports
-htmlcov/
-.tox/
-.nox/
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
-*.py.cover
-*.lcov
-.hypothesis/
-.pytest_cache/
-cover/
+st.set_page_config(page_title="Mülakat Koçu", layout="wide")
 
-# Translations
-*.mo
-*.pot
 
-# Django stuff:
-*.log
-local_settings.py
-db.sqlite3
-db.sqlite3-journal
+def load_css(path="style.css"):
+    with open(path, encoding="utf-8") as f:
+        st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
 
-# Flask stuff:
-instance/
-.webassets-cache
 
-# Scrapy stuff:
-.scrapy
+def init_state():
+    defaults = {
+        "page": "welcome",
+        "selected_position": None,
+        "position": None,
+        "level": "Junior",
+        "interview_type": "Davranışsal",
+        "messages": [],
+        "feedback": None,
+        "question_no": 1,
+        "error": None,
+        "report": None,
+        "start_time": None,
+    }
+    for key, value in defaults.items():
+        st.session_state.setdefault(key, value)
 
-# Sphinx documentation
-docs/_build/
 
-# PyBuilder
-.pybuilder/
-target/
+def call_llm_for_next_question():
+    """Modeli çağırır, soruyu mesajlara ve geri bildirimi state'e yazar."""
+    try:
+        with st.spinner("Mülakatçı düşünüyor..."):
+            result = llm.ask_llm(
+                st.session_state.messages,
+                st.session_state.position,
+                st.session_state.level,
+                st.session_state.interview_type,
+            )
+        st.session_state.feedback = result["feedback"]
+        st.session_state.messages.append(
+            {"role": "assistant", "content": result["next_question"]}
+        )
+        st.session_state.error = None
+    except Exception:
+        st.session_state.error = "Soru alınamadı. Bağlantını kontrol edip tekrar dene."
 
-# Jupyter Notebook
-.ipynb_checkpoints
 
-# IPython
-profile_default/
-ipython_config.py
+def interview_page():
+    s = st.session_state
+    if s.start_time is None:
+        s.start_time = time.time()
 
-# pyenv
-#   For a library or package, you might want to ignore these files since the code is
-#   intended to run in multiple environments; otherwise, check them in:
-# .python-version
+    # İlk soru
+    if not s.messages and not s.error:
+        call_llm_for_next_question()
 
-# pipenv
-#   According to pypa/pipenv#598, it is recommended to include Pipfile.lock in version control.
-#   However, in case of collaboration, if having platform-specific dependencies or dependencies
-#   having no cross-platform support, pipenv may install dependencies that don't work, or not
-#   install all needed dependencies.
-# Pipfile.lock
+    # Üst bar
+    left, right = st.columns([3, 1])
+    with left:
+        st.markdown(f"**{s.position}**")
+        st.caption(f"{s.level} seviye, {s.interview_type} mülakat")
+    with right:
+        st.markdown(
+            f'<div style="text-align:right;font-weight:600">'
+            f"Soru {s.question_no} / {TOTAL_QUESTIONS}</div>",
+            unsafe_allow_html=True,
+        )
+    st.progress(s.question_no / TOTAL_QUESTIONS)
+    st.write("")
 
-# uv
-#   Similar to Pipfile.lock, it is generally recommended to include uv.lock in version control.
-#   This is especially recommended for binary packages to ensure reproducibility, and is more
-#   commonly ignored for libraries.
-# uv.lock
+    chat_col, coach_col = st.columns([2, 1], gap="large")
 
-# poetry
-#   Similar to Pipfile.lock, it is generally recommended to include poetry.lock in version control.
-#   This is especially recommended for binary packages to ensure reproducibility, and is more
-#   commonly ignored for libraries.
-#   https://python-poetry.org/docs/basic-usage/#commit-your-poetrylock-file-to-version-control
-# poetry.lock
-# poetry.toml
+    # Sol: sohbet
+    with chat_col:
+        if s.messages:
+            history = s.messages[:-1]
+            active = s.messages[-1]
 
-# pdm
-#   Similar to Pipfile.lock, it is generally recommended to include pdm.lock in version control.
-#   pdm recommends including project-wide configuration in pdm.toml, but excluding .pdm-python.
-#   https://pdm-project.org/en/latest/usage/project/#working-with-version-control
-# pdm.lock
-# pdm.toml
-.pdm-python
-.pdm-build/
+            with st.container(key="history"):
+                for m in history:
+                    with st.chat_message(m["role"]):
+                        st.write(m["content"])
 
-# pixi
-#   Similar to Pipfile.lock, it is generally recommended to include pixi.lock in version control.
-# pixi.lock
-#   Pixi creates a virtual environment in the .pixi directory, just like venv module creates one
-#   in the .venv directory. It is recommended not to include this directory in version control.
-.pixi/*
-!.pixi/config.toml
+            if active["role"] == "assistant":
+                with st.chat_message("assistant"):
+                    st.markdown(
+                        f'<div class="active-question">{active["content"]}</div>',
+                        unsafe_allow_html=True,
+                    )
 
-# PEP 582; used by e.g. github.com/David-OConnor/pyflow and github.com/pdm-project/pdm
-__pypackages__/
+        if s.error:
+            st.error(s.error)
+            if st.button("Tekrar dene"):
+                call_llm_for_next_question()
+                st.rerun()
 
-# Celery stuff
-celerybeat-schedule*
-celerybeat.pid
+        answer = st.chat_input("Cevabını yaz...", disabled=bool(s.error))
+        if answer:
+            s.messages.append({"role": "user", "content": answer})
+            if s.question_no >= TOTAL_QUESTIONS:
+                s.page = "report"
+            else:
+                s.question_no += 1
+                call_llm_for_next_question()
+            st.rerun()
 
-# Redis
-*.rdb
-*.aof
-*.pid
+    # Sağ: Mülakat Koçu
+    with coach_col:
+        st.markdown("**Mülakat Koçu**")
+        fb = s.feedback
+        if fb:
+            st.markdown(
+                f'<div class="coach-good"><b>Güçlü yön</b><br>{fb["strength"]}</div>',
+                unsafe_allow_html=True,
+            )
+            st.markdown(
+                f'<div class="coach-warn"><b>Geliştirilebilir</b><br>{fb["improvement"]}</div>',
+                unsafe_allow_html=True,
+            )
+        else:
+            st.markdown(
+                '<div class="card muted">İlk cevabını yazınca geri bildirim burada görünecek.</div>',
+                unsafe_allow_html=True,
+            )
 
-# RabbitMQ
-mnesia/
-rabbitmq/
-rabbitmq-data/
+    st.write("")
+    if st.button("Mülakatı Bitir"):
+        s.page = "report"
+        st.rerun()
 
-# ActiveMQ
-activemq-data/
 
-# SageMath parsed files
-*.sage.py
+POSITIONS = [
+    ("Yazılım Mühendisi", "Algoritma, sistem tasarımı, kod kalitesi"),
+    ("Veri Analisti", "SQL, analiz ve veriyle hikaye anlatma"),
+    ("Ürün Yöneticisi", "Önceliklendirme, strateji, paydaş yönetimi"),
+    ("Pazarlama Uzmanı", "Kampanya, marka ve büyüme"),
+    ("İK Uzmanı", "İşe alım, çalışan deneyimi, iletişim"),
+    ("Diğer", "Kendi pozisyonunu yaz"),
+]
+LEVELS = ["Stajyer", "Junior", "Orta", "Kıdemli"]
+INTERVIEW_TYPES = ["Davranışsal", "Teknik", "Karışık"]
 
-# Environments
-.env
-.envrc
-.venv
-env/
-venv/
-ENV/
-env.bak/
-venv.bak/
 
-# Spyder project settings
-.spyderproject
-.spyproject
+def welcome_page():
+    s = st.session_state
 
-# Rope project settings
-.ropeproject
+    st.title("Hangi mülakata hazırlanıyorsun?")
+    st.caption("Pozisyonunu seç, yapay zeka mülakatçı sana 5 soru sorsun ve sonunda karne versin.")
+    st.write("")
 
-# mkdocs/Zensical documentation
-/site
+    # Pozisyon kartları: 3 sütun x 2 satır
+    for row_start in range(0, len(POSITIONS), 3):
+        cols = st.columns(3, gap="medium")
+        for col, (i, (name, subtitle)) in zip(
+            cols, list(enumerate(POSITIONS))[row_start : row_start + 3]
+        ):
+            selected = s.selected_position == name
+            key = f"poscard_{i}_sel" if selected else f"poscard_{i}"
+            with col:
+                if st.button(f"**{name}**  \n:gray[{subtitle}]", key=key, use_container_width=True):
+                    s.selected_position = name
+                    st.rerun()
 
-# mypy
-.mypy_cache/
-.dmypy.json
-dmypy.json
+    # "Diğer" seçilince serbest metin
+    custom_position = ""
+    if s.selected_position == "Diğer":
+        custom_position = st.text_input(
+            "Pozisyon adı", key="custom_position", placeholder="Örneğin: Grafik Tasarımcı"
+        ).strip()
 
-# Pyre type checker
-.pyre/
+    st.write("")
+    level_col, type_col = st.columns(2, gap="large")
+    with level_col:
+        level = st.radio("Deneyim seviyesi", LEVELS, index=1, horizontal=True, key="level_choice")
+    with type_col:
+        interview_type = st.radio("Mülakat türü", INTERVIEW_TYPES, horizontal=True, key="type_choice")
 
-# pytype static type analyzer
-.pytype/
+    position = custom_position if s.selected_position == "Diğer" else s.selected_position
 
-# Cython debug symbols
-cython_debug/
+    st.write("")
+    if st.button("Mülakatı Başlat", type="primary", disabled=not position):
+        s.position = position
+        s.level = level
+        s.interview_type = interview_type
+        reset_interview(page="interview")
+        st.rerun()
+    if not position:
+        st.caption("Başlamak için bir pozisyon seç.")
 
-# PyCharm
-#   JetBrains specific template is maintained in a separate JetBrains.gitignore that can
-#   be found at https://github.com/github/gitignore/blob/main/Global/JetBrains.gitignore
-#   and can be added to the global gitignore or merged into this file.  For a more nuclear
-#   option (not recommended) you can uncomment the following to ignore the entire idea folder.
-# .idea/
 
-# Abstra
-#   Abstra is an AI-powered process automation framework.
-#   Ignore directories containing user credentials, local state, and settings.
-#   Learn more at https://abstra.io/docs
-.abstra/
+def format_duration(seconds):
+    minutes, secs = divmod(int(seconds), 60)
+    return f"{minutes} dk {secs} sn" if minutes else f"{secs} sn"
 
-# Visual Studio Code
-#   Visual Studio Code specific template is maintained in a separate VisualStudioCode.gitignore that
-#   can be found at https://github.com/github/gitignore/blob/main/Global/VisualStudioCode.gitignore
-#   and can be added to the global gitignore or merged into this file. However, if you prefer, you
-#   could uncomment the following to ignore the entire vscode folder
-# .vscode/
-# Temporary file for partial code execution
-tempCodeRunnerFile.py
 
-# Ruff stuff:
-.ruff_cache/
+def reset_interview(page="welcome"):
+    s = st.session_state
+    s.messages = []
+    s.feedback = None
+    s.error = None
+    s.report = None
+    s.start_time = None
+    s.question_no = 1
+    s.page = page
 
-# PyPI configuration file
-.pypirc
 
-# Marimo
-marimo/_static/
-marimo/_lsp/
-__marimo__/
+def report_page():
+    s = st.session_state
 
-# Streamlit
-.streamlit/secrets.toml
+    if s.report is None:
+        try:
+            with st.spinner("Karne hazırlanıyor..."):
+                s.report = llm.generate_report(
+                    s.messages, s.position, s.level, s.interview_type
+                )
+            s.error = None
+        except Exception:
+            s.error = "Karne oluşturulamadı. Bağlantını kontrol edip tekrar dene."
+
+    if s.error:
+        st.error(s.error)
+        if st.button("Tekrar dene", type="primary"):
+            st.rerun()
+        if st.button("Yeni Mülakat"):
+            reset_interview()
+            st.rerun()
+        return
+
+    report = s.report
+    duration = format_duration(time.time() - s.start_time) if s.start_time else None
+
+    st.title("Mülakat karnen")
+    caption = f"{s.position}, {s.level} seviye, {s.interview_type} mülakat"
+    if duration:
+        caption += f". Toplam süre: {duration}"
+    st.caption(caption)
+    st.write("")
+
+    with st.container(key="score"):
+        st.metric("Genel puan", f"{report['score']} / 10")
+    st.write("")
+
+    good_col, improve_col = st.columns(2, gap="large")
+    with good_col:
+        st.subheader("Güçlü yönler")
+        for item in report["strengths"]:
+            st.markdown(f'<div class="coach-good">{item}</div>', unsafe_allow_html=True)
+    with improve_col:
+        st.subheader("Geliştirilmesi gerekenler")
+        for item in report["improvements"]:
+            st.markdown(f'<div class="coach-warn">{item}</div>', unsafe_allow_html=True)
+
+    st.write("")
+    st.info(report["star_tip"])
+
+    with st.expander("Konuşmayı Göster"):
+        for m in s.messages:
+            with st.chat_message(m["role"]):
+                st.write(m["content"])
+
+    st.write("")
+    if st.button("Yeni Mülakat", type="primary"):
+        reset_interview()
+        st.rerun()
+
+
+load_css()
+init_state()
+
+page = st.session_state.page
+if page == "welcome":
+    welcome_page()
+elif page == "interview":
+    interview_page()
+else:
+    report_page()

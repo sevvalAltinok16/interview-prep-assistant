@@ -146,17 +146,22 @@ div[class*="st-key-poscard"] button {
   text-align: left;
 }
 div[class*="st-key-poscard"] button > div,
+div[class*="st-key-poscard"] button > div > span {
+  width: 100%;
+  justify-content: flex-start !important;
+  text-align: left !important;
+}
 div[class*="st-key-poscard"] button [data-testid="stMarkdownContainer"] {
   width: 100%;
   text-align: left !important;
-}
-div[class*="st-key-poscard"] button p {
-  width: 100%;
-  text-align: left !important;
-  line-height: 1.5;
   white-space: normal !important;
   overflow: visible !important;
   text-overflow: clip !important;
+}
+div[class*="st-key-poscard"] button p {
+  text-align: left !important;
+  line-height: 1.5;
+  white-space: normal !important;
 }
 div[class*="st-key-poscard"] button:hover {
   border-color: var(--primary-hover);
@@ -165,4 +170,86 @@ div[class*="st-key-poscard"] button:hover {
 div[class*="st-key-poscard"][class*="_sel"] button {
   border: 2px solid var(--primary);
   background: var(--bg);
+}
+
+/* Cilalama */
+/* Sohbet avatarları (robot/yüz ikonları) kullanılmıyor */
+[data-testid="stChatMessageAvatarAssistant"],
+[data-testid="stChatMessageAvatarUser"],
+[data-testid="stChatMessageAvatarCustom"] {
+  display: none;
+}
+[data-testid="stChatMessage"] {
+  border-radius: var(--radius);
+  padding: 0.8rem 1rem;
+}
+.active-question {
+  margin-bottom: 0.6rem;
+}
+
+/* Yardımcı metin tam opaklıkta, paletteki gri */
+[data-testid="stCaptionContainer"] {
+  color: var(--muted);
+  opacity: 1;
+}
+
+/* Alt başlıklar */
+.stApp h3 {
+  font-size: 1.15rem;
+}
+
+/* Puan etiketi ortada */
+.st-key-score [data-testid="stMetricLabel"] *,
+.st-key-score [data-testid="stMetricValue"] * {
+  justify-content: center;
+  text-align: center;
+  width: 100%;
+}
+
+/* STAR ipucu: palet renkleri (Streamlit'in varsayılan mavisi yerine) */
+.st-key-startip [data-testid="stAlertContainer"] {
+  background: var(--surface) !important;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--primary);
+  border-radius: var(--radius);
+}
+.st-key-startip [data-testid="stAlertContainer"] * {
+  color: var(--primary) !important;
+}
+
+/* Açılır kutu ve giriş kutusu odak durumu */
+[data-testid="stExpander"] details {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+[data-testid="stChatInput"]:focus-within {
+  border-color: var(--primary);
+}
+
+/* Puan bloğunu tamamen ortala */
+.st-key-score [data-testid="stMetric"] > div {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+}
+.st-key-score [data-testid="stMetricLabel"] {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+}
+
+/* Pasif butonlar: aktiften açıkça ayrışsın */
+.stButton > button:disabled,
+.stButton > button[kind="primary"]:disabled,
+.stButton > button[kind="secondary"]:disabled {
+  background: #E9ECF1;
+  border-color: #E9ECF1;
+  color: #A3ACB9;
+  cursor: not-allowed;
+}
+.stButton > button:disabled:hover {
+  background: #E9ECF1;
+  border-color: #E9ECF1;
+  color: #A3ACB9;
 }

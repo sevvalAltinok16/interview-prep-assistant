@@ -1,3 +1,4 @@
+import html
 import time
 
 import streamlit as st
@@ -97,7 +98,7 @@ def interview_page():
             if active["role"] == "assistant":
                 with st.chat_message("assistant"):
                     st.markdown(
-                        f'<div class="active-question">{active["content"]}</div>',
+                        f'<div class="active-question">{html.escape(active["content"])}</div>',
                         unsafe_allow_html=True,
                     )
 
@@ -123,11 +124,11 @@ def interview_page():
         fb = s.feedback
         if fb:
             st.markdown(
-                f'<div class="coach-good"><b>Güçlü yön</b><br>{fb["strength"]}</div>',
+                f'<div class="coach-good"><b>Güçlü yön</b><br>{html.escape(fb["strength"])}</div>',
                 unsafe_allow_html=True,
             )
             st.markdown(
-                f'<div class="coach-warn"><b>Geliştirilebilir</b><br>{fb["improvement"]}</div>',
+                f'<div class="coach-warn"><b>Geliştirilebilir</b><br>{html.escape(fb["improvement"])}</div>',
                 unsafe_allow_html=True,
             )
         else:
@@ -137,15 +138,16 @@ def interview_page():
             )
 
     st.write("")
-    if st.button("Mülakatı Bitir"):
+    has_answer = any(m["role"] == "user" for m in s.messages)
+    if st.button("Mülakatı Bitir", type="primary", disabled=not has_answer):
         s.page = "report"
         st.rerun()
 
 
 POSITIONS = [
-    ("Yazılım Mühendisi", "Algoritma, sistem tasarımı, kod kalitesi"),
+    ("Yazılım Mühendisi", "Algoritma ve sistem tasarımı"),
     ("Veri Analisti", "SQL, analiz ve veriyle hikaye anlatma"),
-    ("Ürün Yöneticisi", "Önceliklendirme, strateji, paydaş yönetimi"),
+    ("Ürün Yöneticisi", "Önceliklendirme ve strateji"),
     ("Pazarlama Uzmanı", "Kampanya, marka ve büyüme"),
     ("İK Uzmanı", "İşe alım, çalışan deneyimi, iletişim"),
     ("Diğer", "Kendi pozisyonunu yaz"),
@@ -257,14 +259,15 @@ def report_page():
     with good_col:
         st.subheader("Güçlü yönler")
         for item in report["strengths"]:
-            st.markdown(f'<div class="coach-good">{item}</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="coach-good">{html.escape(item)}</div>', unsafe_allow_html=True)
     with improve_col:
         st.subheader("Geliştirilmesi gerekenler")
         for item in report["improvements"]:
-            st.markdown(f'<div class="coach-warn">{item}</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="coach-warn">{html.escape(item)}</div>', unsafe_allow_html=True)
 
     st.write("")
-    st.info(report["star_tip"])
+    with st.container(key="startip"):
+        st.info(report["star_tip"])
 
     with st.expander("Konuşmayı Göster"):
         for m in s.messages:

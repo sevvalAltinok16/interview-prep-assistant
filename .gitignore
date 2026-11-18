@@ -287,3 +287,5 @@ elif page == "interview":
     interview_page()
 else:
     report_page()
+    
+.env

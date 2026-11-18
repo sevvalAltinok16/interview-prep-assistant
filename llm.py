@@ -1,4 +1,4 @@
-import os, json
+import os, json, time
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
@@ -8,6 +8,7 @@ client = genai.Client(
     api_key=os.getenv("GEMINI_API_KEY"),
     http_options=types.HttpOptions(timeout=120000)) # milisaniye
 MODEL = "gemini-flash-lite-latest" # çalışmazsa AI Studio'dan güncel adı kontrol et
+MODELS = ["gemini-flash-lite-latest", "gemini-3.5-flash-lite", "gemini-flash-latest"]
 import re
 
 FIELD_GUIDES = [
@@ -55,19 +56,32 @@ def _to_contents(messages, extra=None):
     items = [{"role": "user", "content": "Mülakatı başlat."}] + list(messages)
     if extra:
         items.append({"role": "user", "content": extra})
-    return [types.Content(
-                role="model" if m["role"] == "assistant" else "user",
-                parts=[types.Part(text=m["content"])])
-            for m in items]
+    contents = []
+    for m in items:
+        text = (m["content"] or "").strip()
+        if not text:  # boş mesajı Gemini yok sayar, yerine açık bir not koyuyoruz
+            text = "(Aday cevap vermedi.)"
+        contents.append(types.Content(
+            role="model" if m["role"] == "assistant" else "user",
+            parts=[types.Part(text=text)]))
+    return contents
 
 
 def _call_json(system, contents):
-    r = client.models.generate_content(
-        model=MODEL, contents=contents,
-        config=types.GenerateContentConfig(
-            system_instruction=system,
-            response_mime_type="application/json"))
-    return json.loads(r.text)
+    last = None
+    for model in MODELS:          # sırayla modelleri dene
+        for attempt in range(3):  # her model için 3 deneme
+            try:
+                r = client.models.generate_content(
+                    model=model, contents=contents,
+                    config=types.GenerateContentConfig(
+                        system_instruction=system,
+                        response_mime_type="application/json"))
+                return json.loads(r.text)
+            except Exception as e:
+                last = e
+                time.sleep(3 * (attempt + 1))  # 3, 6, 9 saniye bekle
+    raise last
 
 
 def ask_llm(messages, position, level, interview_type):
@@ -82,10 +96,15 @@ def ask_llm(messages, position, level, interview_type):
         '{"feedback": {"strength": "...", "improvement": "..."} veya null, '
         '"next_question": "..."}. '
         "Kurallar: Henüz adayın cevabı yoksa feedback null olsun ve ilk soruyu sor. "
-        "Aday cevap verdiyse feedback'te adaya doğrudan 'sen' diye hitap et, "
-        "cevabın bir güçlü yönünü ve bir geliştirilebilir yönünü kısaca (1-2 cümle) "
-        "yaz, next_question'a bir sonraki gerçekçi mülakat sorusunu koy. "
-        "Aynı soruyu tekrar sorma.")
+        "Aday cevap verdiyse feedback'te strength ve improvement İKİSİNDE de adaya "
+        "doğrudan 'sen' diye hitap et, 'aday' kelimesini kullanma. Feedback "
+        "alanlarını mülakat dili ne olursa olsun HER ZAMAN Türkçe yaz. "
+        "Sadece adayın SON cevabını değerlendir, önceki cevapları övme. "
+        "Her biri kısa (1-2 cümle) olsun. Son cevap '(Aday cevap vermedi.)' ise "
+        "ya da anlamsızsa, strength alanına 'Bu cevapta belirgin bir güçlü yön "
+        "yok.' yaz ve improvement'ta cevap vermenin önemini söyle. "
+        "next_question'a bir sonraki gerçekçi mülakat sorusunu koy ve onu "
+        "mülakat dilinde yaz. Aynı soruyu tekrar sorma.")
     try:
         data = _call_json(system, _to_contents(messages))
         fb = data.get("feedback")
@@ -95,7 +114,6 @@ def ask_llm(messages, position, level, interview_type):
     except Exception as e:
         return {"feedback": None,
                 "next_question": f"⚠️ Bir hata oluştu, tekrar deneyin. ({e})"}
-
 
 def generate_report(messages, position, level, interview_type):
     system = (
@@ -112,7 +130,8 @@ def generate_report(messages, position, level, interview_type):
         "türü cevapları puana yansıt. strengths ve improvements 2-4 "
         "maddelik liste olsun. star_tip, adayın eksiğine göre STAR "
         "metodunu (Situation, Task, Action, Result) nasıl kullanacağına dair "
-        "kısa ve somut bir öneri olsun. Türkçe yaz.")
+        "en fazla 2 kısa cümlelik, 250 karakteri geçmeyen bir öneri olsun; "
+        "parantez ve uzun sıralama kullanma. Türkçe yaz.")
     try:
         data = _call_json(system, _to_contents(
             messages, "Mülakat bitti, karneyi hazırla."))
@@ -123,7 +142,8 @@ def generate_report(messages, position, level, interview_type):
         return data
     except Exception as e:
         return {"score": 0.0, "strengths": [],
-                "improvements": [f"Karne oluşturulamadı: {e}"], "star_tip": ""}
+                "improvements": [f"Karne oluşturulamadı: {e}"],
+                "star_tip": "", "error": True}
 
 
 if __name__ == "__main__":  # arayüzsüz terminal testi

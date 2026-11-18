@@ -3,9 +3,15 @@ import time
 
 import streamlit as st
 
-# Arkadaşın llm.py'yi bitirene kadar True kalsın (sahte fake_llm.py kullanılır).
-# Gerçek llm.py hazır olunca sadece bunu False yap.
-USE_FAKE_LLM = True
+try:  # .env içindeki GEMINI_API_KEY'i ortam değişkenine yükler
+    from dotenv import load_dotenv
+
+    load_dotenv()
+except ImportError:
+    pass
+
+# True: sahte fake_llm.py (anahtar gerekmez). False: arkadaşın gerçek llm.py'si.
+USE_FAKE_LLM = False
 
 if USE_FAKE_LLM:
     import fake_llm as llm
@@ -41,22 +47,28 @@ def init_state():
 
 
 def call_llm_for_next_question():
-    """Modeli çağırır, soruyu mesajlara ve geri bildirimi state'e yazar."""
+    """Modeli çağırır. Başarılıysa soruyu ve geri bildirimi state'e yazar.
+
+    Hata durumunda (istisna ya da '⚠' ile başlayan soru) mesajlara EKLEMEZ ve
+    soru sayacını artırmaz; sadece s.error doldurulur (Tekrar Dene butonu için).
+    """
+    s = st.session_state
     try:
-        with st.spinner("Mülakatçı düşünüyor..."):
-            result = llm.ask_llm(
-                st.session_state.messages,
-                st.session_state.position,
-                st.session_state.level,
-                st.session_state.interview_type,
-            )
-        st.session_state.feedback = result["feedback"]
-        st.session_state.messages.append(
-            {"role": "assistant", "content": result["next_question"]}
-        )
-        st.session_state.error = None
+        with st.spinner("Düşünüyor..."):
+            result = llm.ask_llm(s.messages, s.position, s.level, s.interview_type)
+        question = str(result["next_question"]).strip()
+        if question.startswith("\u26a0"):
+            s.error = question
+            return
+        # Sayaç sadece bir cevaptan sonra gelen yeni soruda artar (ilk soruda artmaz)
+        advance = any(m["role"] == "user" for m in s.messages)
+        s.feedback = result["feedback"]
+        s.messages.append({"role": "assistant", "content": question})
+        if advance:
+            s.question_no += 1
+        s.error = None
     except Exception:
-        st.session_state.error = "Soru alınamadı. Bağlantını kontrol edip tekrar dene."
+        s.error = "Soru alınamadı. Bağlantını kontrol edip tekrar dene."
 
 
 def interview_page():
@@ -87,15 +99,18 @@ def interview_page():
     # Sol: sohbet
     with chat_col:
         if s.messages:
-            history = s.messages[:-1]
-            active = s.messages[-1]
+            last = s.messages[-1]
+            if last["role"] == "assistant":
+                history, active = s.messages[:-1], last
+            else:  # cevap verildi ama yeni soru gelmedi (hata): hepsi geçmiş
+                history, active = s.messages, None
 
             with st.container(key="history"):
                 for m in history:
                     with st.chat_message(m["role"]):
                         st.write(m["content"])
 
-            if active["role"] == "assistant":
+            if active:
                 with st.chat_message("assistant"):
                     st.markdown(
                         f'<div class="active-question">{html.escape(active["content"])}</div>',
@@ -104,17 +119,18 @@ def interview_page():
 
         if s.error:
             st.error(s.error)
-            if st.button("Tekrar dene"):
+            if st.button("Tekrar Dene"):
+                s.error = None
                 call_llm_for_next_question()
                 st.rerun()
 
         answer = st.chat_input("Cevabını yaz...", disabled=bool(s.error))
-        if answer:
-            s.messages.append({"role": "user", "content": answer})
+        if answer and answer.strip():
+            s.messages.append({"role": "user", "content": answer.strip()})
             if s.question_no >= TOTAL_QUESTIONS:
+                s.error = None
                 s.page = "report"
             else:
-                s.question_no += 1
                 call_llm_for_next_question()
             st.rerun()
 
@@ -133,13 +149,14 @@ def interview_page():
             )
         else:
             st.markdown(
-                '<div class="card muted">İlk cevabını yazınca geri bildirim burada görünecek.</div>',
+                '<div class="card muted">Henüz geri bildirim yok. İlk cevabını yazınca burada görünecek.</div>',
                 unsafe_allow_html=True,
             )
 
     st.write("")
     has_answer = any(m["role"] == "user" for m in s.messages)
     if st.button("Mülakatı Bitir", type="primary", disabled=not has_answer):
+        s.error = None
         s.page = "report"
         st.rerun()
 
@@ -147,13 +164,21 @@ def interview_page():
 POSITIONS = [
     ("Yazılım Mühendisi", "Algoritma ve sistem tasarımı"),
     ("Veri Analisti", "SQL, analiz ve veriyle hikaye anlatma"),
+    ("Siber Güvenlik Uzmanı", "Zafiyet analizi ve olay müdahalesi"),
+    ("Gömülü Sistemler Mühendisi", "Mikrodenetleyici ve devre"),
+    ("Biyoinformatik / CADD Uzmanı", "İlaç tasarımı ve moleküler modelleme"),
     ("Ürün Yöneticisi", "Önceliklendirme ve strateji"),
     ("Pazarlama Uzmanı", "Kampanya, marka ve büyüme"),
+    ("Satış / Müşteri Temsilcisi", "İkna ve müşteri ilişkileri"),
     ("İK Uzmanı", "İşe alım, çalışan deneyimi, iletişim"),
+    ("Finans / Muhasebe Uzmanı", "Bütçe, analiz ve risk"),
+    ("UX / Grafik Tasarımcı", "Tasarım süreci ve portföy"),
+    ("Makine / İnşaat / Endüstri Mühendisi", "Proje, süreç ve kalite"),
     ("Diğer", "Kendi pozisyonunu yaz"),
 ]
 LEVELS = ["Stajyer", "Junior", "Orta", "Kıdemli"]
-INTERVIEW_TYPES = ["Davranışsal", "Teknik", "Karışık"]
+# "İngilizce" değeri aynen kalmalı: llm.py mülakatı İngilizce yapmak için bunu arıyor.
+INTERVIEW_TYPES = ["Davranışsal", "Teknik", "Karışık", "İngilizce"]
 
 
 def welcome_page():
@@ -163,7 +188,7 @@ def welcome_page():
     st.caption("Pozisyonunu seç, yapay zeka mülakatçı sana 5 soru sorsun ve sonunda karne versin.")
     st.write("")
 
-    # Pozisyon kartları: 3 sütun x 2 satır
+    # Pozisyon kartları: 3 sütunluk ızgara (liste üzerinden döngüyle çizilir)
     for row_start in range(0, len(POSITIONS), 3):
         cols = st.columns(3, gap="medium")
         for col, (i, (name, subtitle)) in zip(
@@ -180,7 +205,7 @@ def welcome_page():
     custom_position = ""
     if s.selected_position == "Diğer":
         custom_position = st.text_input(
-            "Pozisyon adı", key="custom_position", placeholder="Örneğin: Grafik Tasarımcı"
+            "Pozisyon adı", key="custom_position", placeholder="Pozisyonu açık yaz, örn. Hukuk Danışmanı"
         ).strip()
 
     st.write("")
@@ -222,19 +247,25 @@ def reset_interview(page="welcome"):
 def report_page():
     s = st.session_state
 
-    if s.report is None:
+    if s.report is None and not s.error:
         try:
             with st.spinner("Karne hazırlanıyor..."):
-                s.report = llm.generate_report(
+                result = llm.generate_report(
                     s.messages, s.position, s.level, s.interview_type
                 )
-            s.error = None
+            if not isinstance(result, dict) or result.get("error"):
+                s.error = "Karne şu an oluşturulamadı, tekrar dene."
+            else:
+                s.report = result
+                s.error = None
         except Exception:
-            s.error = "Karne oluşturulamadı. Bağlantını kontrol edip tekrar dene."
+            s.error = "Karne şu an oluşturulamadı, tekrar dene."
 
     if s.error:
+        # Konuşma geçmişi silinmez: "Tekrar Dene" aynı konuşmayla karneyi yeniden ister.
         st.error(s.error)
-        if st.button("Tekrar dene", type="primary"):
+        if st.button("Tekrar Dene", type="primary"):
+            s.error = None
             st.rerun()
         if st.button("Yeni Mülakat"):
             reset_interview()
